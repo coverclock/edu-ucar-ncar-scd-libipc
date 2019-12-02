@@ -1,0 +1,230 @@
+@(#)mahdavi.txt	1.1 96/06/19 mahdavi@psc.edu
+
+Enabling High Performance Data Transfers on Hosts:
+
+(Notes for Users and System Administrators)
+
+----------------------------------------------------------------------------
+
+In order to take advantage of today's high speed networks, hosts must
+support and utilize extensions to basic TCP/IP. There are four main steps
+required for both the data sender and data receiver:
+
+  1. The host systems must use Path MTU Discovery (RFC1191). This allows
+     systems to use the largest possible packet size, rather than the
+     default of 512 bytes. On most systems, this feature must be explicitly
+     enabled by the system administrator. If Path MTU Discovery is
+     unavailable or undesired, it is sometimes possible to trick the system
+     into using large packets, but this may have undesirable side effects.
+
+  2. The host systems must support RFC1323 "Large Windows" extensions to
+     TCP. These extensions enable new features in the TCP/IP protocols
+     needed for high speed transfers. On some systems, RFC1323 extensions
+     are included but may require the system administrator to explicitly
+     turn them on.
+
+  3. The host system must support large enough socket buffers for reading
+     and writing data to the network. Typical Unix systems include a default
+     maximum value for the socket buffer size between 128 kB and 1 MB. For
+     many paths, this is not enough, and must be increased. (Without RFC1323
+     "Large Windows", TCP/IP does not allow applications to buffer more the
+     64 kB in the network, which is inadequate for almost all high speed
+     paths.)
+
+  4. The application must set its send and receive socket buffer sizes (at
+     both ends) to at least the bandwidth*delay product of the link. (See
+     computing bandwidth*delay products below). Some user applications
+     support options for the user to set the socket buffer size (for
+     example, Cray UNICOS FTP); many do not. Alternatively, the system-wide
+     default socket buffer size can be raised, causing all applications to
+     utilize large socket buffers. This is not generally recommended, as
+     many network applications then consume system memory which they do not
+     require.
+
+     For socket applications, the programmer can choose the socket buffer
+     sizes using a setsockopt() system call. A Detailed Users Guide
+     describing how to set socket buffer sizes within socket based
+     applications has been put together by Von Welch at NCSA.
+
+----------------------------------------------------------------------------
+
+         Support for these features under various operating systems
+
+                                      Default  Default Default
+    Operating                         maximum    TCP     UDP   Applications
+     System       Path MTU  RFC1323   socket    socket socket    (if any)
+ (Alphabetical)  Discovery  Support   buffer    buffer buffer    which are
+                                       size      size   size   user tunable
+                                                       9216
+ BSDi            No        Yes      256kB      8kB     snd     None
+                                                       41600
+                                                       rcv
+ ConvexOS 11.0             Yes      2400kB
+ CRI Unicos 8.0  Yes       Yes                                 FTP
+ Digital Unix
+ 3.2                       Yes      128kB                      None
+ FreeBSD 2.1.5   Yes       Yes      256kB      16kB    40kB
+ HPUX ???
+ IBM AIX 3.2 &
+ 4.1             No        Yes      64kB       16kB            None
+ Linux           Yes
+ MacOS (Open
+ Transport)      Yes       No
+ Microsoft
+ Windows NT
+ Microsoft Win95
+ NetBSD
+ SGI IRIX 5.3    Yes       Yes      512kB      60kB            None
+ SGI IRIX 6.1    Yes       Yes      1MB        60kB            None
+ SGI IRIX 6.2    Yes       Yes      Unlimitted 60kB            None
+ Sun Solaris 2.5
+
+----------------------------------------------------------------------------
+
+Computing Bandwidth*Delay Products
+
+The peak bandwidth of the link is typically expressed in Mbit/s, and for the
+vBNS network is approximately 120 Mbit/s. The round-trip delay for a link
+can be measured with traceroute, and for high-speed WAN links is typically
+between 10 msec and 100 msec. For a 60 msec, 120 Mbit/s path, the
+bandwidth*delay product would be 7200 kbit, or 900 kByte.
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits on DEC Alpha systems under Digital Unix
+3.2c
+
+   * By default, the maximum allowable socket buffer size on this operating
+     system is 128kB.
+
+   * In order to raise this maximum, you must increase the kernel variable
+     sb_max. In order to do this, run the following commands as root:
+
+     # dbx -k /vmunix
+     (dbx) assign sb_max = (u_long) 524288
+     (dbx) patch sb_max = (u_long) 524288
+
+     In this example, sb_max is increased to 512kB. The first command
+     changes the variable for the running system, and the second command
+     patches the kernel so it will continue to use the new value, even after
+     rebooting the system. Note, however, that reinstalling (overwriting)
+     the kernel will undo this change.
+
+   * The Digital Unix manuals also recommend increasing mbclusters.
+
+   * Standard applications do not have a mechanism for setting the socket
+     buffer size to anything but the default. However, you can change the
+     kernel default by modifying the kernel variables (...)
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits on IBM RS/6000 systems under AIX 3.2 or
+AIX 4.1
+
+RFC1323 options and defaults are tunable via the "no" command.
+
+See the "no" man page for options; additional information is available in
+the IBM manual AIX Versions 3.2 and 4.1 Performance Tuning Guide, which is
+available on AIX machines through the InfoExplorer hypertext interface.
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits under CRI systems under Unicos 8.0
+
+System configuration parameters are tunable via the command "/etc/netvar".
+Running "/etc/netvar" with no arguments shows all configurable variables:
+
+% /etc/netvar
+Network configuration variables
+        tcp send space is 32678
+        tcp recv space is 32678
+        tcp time to live is 60
+        tcp keepalive delay is 14400
+        udp send space is 65536
+        udp recv space is 68096
+        udp time to live is 60
+        ipforwarding is on
+        ipsendredirects is on
+        subnetsarelocal is on
+        dynamic MTU discovery is on
+        adminstrator mtu override is on
+        maximum number of allocated sockets is 3750
+        maximum socket buffer space is 409600
+        operator message delay interval is 5
+        per-session sockbuf space limit is 0
+
+The following variables can be set:
+
+   * dynamic MTU discovery: This is "off" by default and should be changed
+     to "on".
+
+   * maximum socket buffer space: This should be set to the desired maximum
+     socket buffer size (in bytes).
+
+   * tcp send space, tcp recv space: These are the default buffer sizes used
+     by applications. These should be changed with caution.
+
+Once variables have been changed in by /etc/netvar, they take effect
+immediately for new processes. Processes which are already running with open
+sockets are not modified.
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits under SGI systems under IRIX 5.3 or 6.1
+
+All of the necessary kernel variables are included in the file:
+
+        /var/sysgen/master.d/bsd
+
+The following variables are available to enable control high speed
+transfers:
+
+   * tcp_mtudisc: To enable MTU Discovery, set the variable tcp_mtudisc = 1.
+
+   * tcp_sendspace, tcp_recvspace: To increase the default socket buffer
+     size for TCP, set the variables tcp_sendspace and tcp_recvspace to the
+     desired value (in byes). Under IRIX 5.3, the maximum socket buffer size
+     allowed is 512 kB. Under IRIX 6.x this limit has been increased to 1
+     MB, and under future releases it is rumored that there will be
+     (effectively) no limit on these TCP socket buffer size.
+
+   * tcp_winscale controls the use of RFC1323 winshift. It is turned on by
+     default and need not be modified.
+
+Once you have editted this file, you must configure a new kernel (using
+/etc/autoconfig) and reboot the system with it.
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits under FreeBSD 2.1.5
+
+MTU discovery is on by default in FreeBSD past 2.1.0-RELEASE (e.g. the
+forthcoming 2.1.5 release, as well as 2.2-CURRENT). If you wish to disble
+MTU discovery, the only way that we know is to lock an interface's MTU,
+which disables MTU discovery on that interface.
+
+You can't modify the maximum socket buffer size in FreeBSD 2.1.0-RELEASE,
+but in 2.2-CURRENT you can use
+
+        sysctl -w kern.maxsockbuf=524288
+
+to make it 512kB (for example). You can also set the TCP and UDP default
+buffer sizes using the variables
+
+        net.inet.tcp.sendspace
+        net.inet.tcp.recvspace
+        net.inet.udp.recvspace
+
+----------------------------------------------------------------------------
+
+Procedure for raising network limits under BSD/OS 2.1 (BSDi)
+
+As far as we know, MTU discovery is not supported in BSDi. However, RFC1323
+is supported, and the procedure for setting the relevant kernel variable
+uses the "sysctl" interface described for FreeBSD (above). See sysctl(1) and
+sysctl(3) for more information.
+
+----------------------------------------------------------------------------
+Jamshid Mahdavi, mahdavi@psc.edu
+(with help from many others)
+Last modified: June, 1996

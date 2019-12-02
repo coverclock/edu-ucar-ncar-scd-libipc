@@ -1,0 +1,841 @@
+.TH IPC 3-local "95/08/06"
+.SH NAME
+ipcsend, ipcrecv, ipcget, ipcput, etc. \- simplified interface to BSD interprocess communication facilities
+.SH COPYRIGHT
+Copyright \(co 1995 University Corporation for Atmospheric Research
+.LP
+All Rights Reserved
+.SH SYNOPSIS
+.nf
+.B #include "ipc.h"
+.LP
+(CLIENT-SERVER MODEL)
+.LP
+.B IPCPORT ipcport(service)
+.B char *service;
+.LP
+.B IPCSOCKET ipcserver(port)
+.B IPCPORT port;
+.LP
+.B IPCSOCKET ipcoserver(port,shift,sndbuf,rcvbuf,nodelay)
+.B IPCPORT port;
+.B int shift;
+.B int sndbuf;
+.B int rcvbuf;
+.B int nodelay;
+.LP
+.B IPCSOCKET ipcaccept(sock)
+.B IPCSOCKET sock;
+.LP
+.B IPCSOCKET ipcclient(address,port)
+.B IPCADDRESS address;
+.B IPCPORT port;
+.LP
+.B IPCSOCKET ipcoclient(address,port,shift,sndbuf,rcvbuf,nodelay)
+.B IPCADDRESS address;
+.B IPCPORT port;
+.B int shift;
+.B int sndbuf;
+.B int rcvbuf;
+.B int nodelay;
+.LP
+.B int ipcsend(sock,buffer,length)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.LP
+.B int ipcvsend(sock,buffer,length)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.LP
+.B int ipcrecv(sock,buffer,length)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.LP
+.B int ipcvrecv(sock,buffer,length)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.LP
+.B int ipctrecv(sock,buffer,length,seconds)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.B int seconds;
+.LP
+.B int ipcparanoid(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcproduct(mbs,ms)
+.B int mbs;
+.B int ms;
+.LP
+.B int ipcoptimal(product,bufsizp)
+.B int product;
+.B int *bufsizp;
+.LP
+(PEER MODEL)
+.LP
+.B IPCPORT ipcmbox(service)
+.B char *service;
+.LP
+.B IPCSOCKET ipcpeer(mbox)
+.B IPCPORT mbox;
+.LP
+.B int ipcput(sock,buffer,length,address,mbox)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.B IPCADDRESS address;
+.B IPCPORT mbox;
+.LP
+.B int ipcget(sock,buffer,length,addressp,mboxp)
+.B IPCSOCKET sock;
+.B char *buffer;
+.B int length;
+.B IPCADDRESS *addressp;
+.B IPCPORT *mboxp;
+.LP
+(EITHER MODEL)
+.LP
+.B IPCADDRESS ipcaddress(host)
+.B char *host;
+.LP
+.B IPCADDRESS ipcaddresses(host,ndx)
+.B char *host;
+.B int ndx;
+.LP
+.B int ipclocal(address)
+.B IPCADDRESS address;
+.LP
+.B char *ipchost(name)
+.B char name[IPCHOSTNAMELEN];
+.LP
+.B int ipcclose(sock)
+.B IPCSOCKET sock;
+.LP
+.B void ipcregister(sock)
+.B IPCSOCKET sock;
+.LP
+.B void ipcunregister(sock)
+.B IPCSOCKET sock;
+.LP
+.B void ipcderegister(sock)
+.B IPCSOCKET sock;
+.LP
+.B IPCSOCKET ipcready()
+.LP
+.B IPCSOCKET ipctimed(seconds)
+.B int seconds;
+.LP
+.B IPCSOCKET ipcpoll()
+.LP
+.B int ipcthisend(sock,addrp,portp)
+.B IPCSOCKET sock;
+.B IPCADDRESS *addrp;
+.B IPCPORT *portp;
+.LP
+.B int ipcthatend(sock,addrp,portp)
+.B IPCSOCKET sock;
+.B IPCADDRESS *addrp;
+.B IPCPORT *portp;
+.LP
+.B int ipcblocking(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcnonblocking(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcdebug(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcnodebug(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipclinger(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcnolinger(sock)
+.B IPCSOCKET sock;
+.LP
+.B int ipcoptions(sock,vector,vsize)
+.B IPCSOCKET sock;
+.B int *vector;
+.B int *vsize;
+.LP
+.B IPCSOCKET ipcpair(sockp)
+.B IPCSOCKET *sockp;
+.LP
+.B char *ipcformat(addr,port,buffer)
+.B IPCADDRESS addr;
+.B IPCPORT port;
+.B char *buffer;
+.LP
+.B int ipcdaemon()
+.LP
+(LOCAL CONNECTIONS)
+.LP
+.B IPCSOCKET locserver(path)
+.B char *path;
+.LP
+.B IPCSOCKET locaccept(sock)
+.B IPCSOCKET sock;
+.LP
+.B IPCSOCKET locclient(path)
+.B char *path;
+.fi
+.SH DESCRIPTION
+Hopefully these functions provide a simplified interface to using
+sockets in the internet domain in 4.3BSD UNIX.  Sockets are just like
+file descriptors, except that instead of pointing to a file they point
+to a corresponding socket in another process. The sockets returned
+and used by these functions are ordinary 4.3BSD sockets,
+and so can be acted upon by any of the applicable UNIX system calls.
+However, the most commonly used operations are provided by this package.
+.LP
+Two models for using sockets are supported by this package:  a
+client-server model using reliable stream sockets, and a peer model
+using connectionless datagram sockets. The model names merely suggest
+how connections are established, and do not imply anything about the
+nature of the applications that may be built using this package.
+.LP
+In the client-server model, a server process creates a bidirectional
+socket at a well known address and port and listens for connection
+requests from client processes. All subsequent data transfer is done in
+real-time in a pipe-like fashion, without implicit record boundries. If
+either end fails the process at the other end is notified
+synchronously. A client can use its socket to talk only to the server
+with which the initial connection was made. A server can use a single
+socket to accept connections to multiple clients, and talk to those
+clients concurrently, either by multiplexing among several
+conversations or by forking new children for each individual
+conversation.
+.LP
+In the peer model, a peer process creates a bidirectional socket at a
+well known address and port and sends and receives datagrams with other
+peer processes who have created corresponding sockets of their own
+own.  All subsequent data transfer is done in discrete packets, with
+all the problems inherent in BSD datagrams.  Datagrams may be lost,
+duplicated, or arrive in a different order from that in which they were
+sent. When a datagram arrives there is no guarantee that the sender is
+still active.  When a datagram is sent there is no guarantee that the
+recepient is still active. Errors may be reported asynchronously.  A
+peer process can use the same socket to send and receive datagrams
+serially with any other peers.
+.LP
+In either model, processes are identified by an internet address and a
+port number. The internet address uniquely identifies a particular host
+machine, while the port number uniquely identifies a particular process
+on that host.  All addresses and port numbers are expected and
+generated in internet network byte order. Functions are provided which
+map an ASCII host name into an internet address, and an ASCII service
+name into a port number.  If a port number of zero is used to create a
+socket, the underlying operating system will assign a unique port
+number. The resulting port number can be attained with one of the
+functions described below.
+.LP
+A third model, in which a pair of connected sockets are created, is
+also supported. It is a degenerate form of the client-server model,
+and is the same method by which 4.3BSD creates pairs of pipes.
+.LP
+Some of the functions described below work only with the client-server
+model, some work only with the peer model, and some work with either.
+.LP
+CLIENT-SERVER MODEL
+.LP
+.B ipcport
+returns a internet port number for the specified stream-socket
+.IR service .
+The service string may be a TCP-protocol service as found in /etc/services,
+or it may be an ASCII representation of a port number. If the port
+cannot be resolved, a zero is returned and errno is set appropriately.
+.LP
+.B ipcserver
+returns an unconnected socket bound to the internet port
+.I port
+on the local host. If an error is detected, a negative number (not
+necessarily -1) is returned and errno is set appropriately.
+.LP
+.B ipcaccept
+waits for a client to request a connection to the host and port
+associated with the server socket
+.IR sock ,
+and then returns a new socket with identical attributes to
+.IR sock ,
+but connected to a socket in the client process. The typical server
+will fork off a child to actually handle communication with the client,
+then loop to accept another connection request. If an error is detected,
+a negative number (not necessarily -1) is returned and errno is set
+appropriately.
+.LP
+.B ipcclient
+requests and waits for completion of a connection to the server
+identified by the specified internet
+.I address
+and
+.IR port .
+If the connection is successful, a socket connected to the server is
+returned. Otherwise a negative number (not necessarily -1) is returned
+and errno is set appropriately.
+.LP
+.B ipcsend
+sends a
+.I buffer
+of
+.I length
+bytes through the connected socket
+.IR sock .
+The number of bytes sent is returned, and should nominally always be
+equal to
+.IR length .
+If the connection was closed from the other end, zero is returned.
+If an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately.
+.LP
+.B ipcvsend
+sends a
+.I buffer
+of no more than
+.I length
+bytes through the connected socket
+.IR sock .
+The number of bytes actually sent is returned. Although
+.B ipcvsend
+always attempts to send the entire buffer, the return value may be
+less than
+.IR length .
+If the connection was closed from the other end, zero is returned.
+If an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately.
+.LP
+.B ipcrecv
+receives a fixed length
+.I buffer
+of
+.I length
+bytes from the connected socket
+.IR sock .
+The number of bytes received is returned, and since the function loops
+until the requested number of bytes is received, this should nominally
+always be equal to
+.IR length .
+If the connection was closed from the other end, zero is returned.
+If an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately.
+.LP
+.B ipcvrecv
+receives a variable length
+.I buffer
+of no more than
+.I length
+bytes from the connected socket
+.IR sock .
+The number of bytes received is returned, and will nominally always
+be less than or equal to
+.IR length .
+If the connection was closed from the other end, zero is returned.
+If an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately.
+.LP
+.B ipctrecv
+is identical to
+.B ipcrecv
+except that if a message is not received within
+.I seconds
+seconds, a negative number is returned and errno is set to ETIMEDOUT.
+.LP
+.B ipcparanoid
+configures a socket so that if the cooperating process closes its far
+end of the connection implicitly (as by exiting) or explicitly, the
+process on the near end is notified asynchronously via a SIGPIPE
+signal.
+.LP
+.B ipcoserver
+and
+.B ipcoclient
+are parameterized versions of
+.B ipcserver
+and
+.B ipcclient
+which support the use of several options which
+can be used where applicable to increase communications channel utilization
+and so increase effective bandwidth.
+.I sndbuf
+.I (rcvbuf)
+sets the maximum buffer size in bytes that can be sent (received)
+on the socket returned by
+.B ipcoserver
+and
+.BR ipcoclient .
+This is done by resizing buffers inside the kernel.
+Current thinking is that
+.I sndbuf
+.I (rcvbuf)
+should be the
+.IR "bandwidth*delay product" .
+As a somewhat extreme example, a communications channel with a
+bandwidth of 18 megabytes per second and a half second latency delay
+(perhaps a geosynchronous satellite supporting OC-3 channels) yields a
+buffer size of nine megabytes. (Typical UNIX implementations have
+some upper bound to which
+.I sndbuf
+.I (rcvbuf)
+can be set without reconfigurating or recompiling the kernel.)
+.I shift
+alters the number of bytes that can be transmitted by
+the protocol layer before it waits for an acknowledgement from the
+other end. This is a problem on high-latency channels as waiting
+for an acknowledgement can allow the channel to drain of data.
+The maximum number of bytes of memory consumed by data waiting for
+acknowledgement is the TCP window size, and the TCP window-shift option
+has the effect of shifting the window size value to the left (that is,
+multiplying it by two)
+.I shift
+times. This is done because the TCP protocol defines the window size
+field to be only 16 bits, enough for a maximum window size of 64KB. Using the
+window-shift value allows the window size to be successively doubled.
+If
+.I nodelay
+is true (non-zero), the underlying TCP implementation does not wait for
+an acknowledgement before transmitting pending packets. This may add
+overhead in the TCP protocol, but can allow systems with very high
+network and I/O performance to make better use of the communications
+channel.
+These parameters can be used together to increase the amount of data
+poured into a IPC client-server connection (which in this implementation
+uses TCP stream sockets) before data has to be acknowledged by the
+receiving end, keeping the communications channel full.
+Note that some or all of these features may not be available on all
+platforms as the underlying TCP/IP implementation may not support them.
+See RFC1323, Irwin95, and the appropriate vendor documentation on TCP
+socket options for more details. This code is experimental.
+.LP
+.B ipcproduct
+and
+.B ipcoptimal
+can be used in conjunction with
+.B ipcoserver
+and
+.BR ipcoclient .
+.B ipcproduct
+calculates the bandwidth*delay product using a bandwidth of
+.I mbs
+.I megabytes per second
+(mb/s), and a delay of
+.I ms
+.IR milliseconds .
+Note the units; these were chosen because they are the units in
+which the metrics of bandwidth and delay are typically measured.
+.B ipcoptimal
+calculates a window shift value and buffer size based
+on the bandwidth*delay product
+.IR product .
+The buffer size in bytes is placed in the value-result parameter
+pointed to by
+.I bufsizep
+and the window shift is returned as the value of the function.
+.LP
+PEER MODEL
+.LP
+.B ipcmbox
+returns a internet port number for the specified datagram-socket
+.IR service .
+The service string may be a UDP-protocol service as found in /etc/services,
+or it may be an ASCII representation of a port number. It is used
+in place of
+.B ipcport
+for peer connections. Although both functions return an internet port
+number, we refer to a peer port as a mailbox or mbox to distinquish
+between the type of connection and suggest when one or the other should
+be used.  If the port cannot be resolved, a zero is returned and errno
+is set appropriately.
+.LP
+.B ipcpeer
+returns an unconnected socket bound to the internet port
+.I mbox
+on the local host. It is used in place of
+.B ipcserver
+or
+.B ipcclient
+for peer connections. If
+.I mbox
+is set to zero, an unused port number is assigned from the user port
+number space and the socket bound to that.  If an error is detected, a
+negative number (not necessarily -1) is returned and errno is set
+appropriately.
+.LP
+.B ipcput
+sends a datagram containing the contents of
+.I buffer
+of
+.I length
+bytes through the unconnected socket
+.I sock
+to the process identified by the internet address
+.I address
+and the port number
+.IR mbox .
+The number of bytes sent is returned, and should nominally always be
+equal to
+.IR length .
+If the connection was closed from the other end, zero is returned;
+if an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately. However, these events may be
+reported asynchronously.
+.LP
+.B ipcget
+receives a fixed length datagram from the unconnected socket
+.I sock
+and places its contents into
+.I buffer
+of
+.I length
+bytes.
+The number of bytes received is returned. The internet address and port
+number of the sending process is placed in the variables pointed to by
+.I addressp
+and
+.I portp
+respectively. These values may in turn be subsequently used with
+.B ipcput
+to send a reply datagram.
+If the connection was closed from the other end, zero is returned;
+if an error is detected, a negative number (not necessarily -1) is
+returned and errno is set appropriately. However these events may be
+reported asynchronously.
+.LP
+EITHER MODEL
+.LP
+.B ipcclose
+closes any connection associated with the socket
+.IR sock ,
+and unbinds the socket from its associated port.  The socket is no
+longer usable once this has been done. The process (if any) on the
+other end of the connection will be notified that the connection has
+been dropped.
+.LP
+.B ipcaddress
+returns the internet address for the specified
+.IR host .
+The host character string can be the actual host name or the ASCII
+representation of an internet address in canonical "dot" notation. If
+the host name or internet address cannot be resolved, zero is returned
+and errno is set appropriately.  Note that zero may be a legal internet
+broadcast address on older systems, but its use is not supported here.
+Most internet hosts map the name "localhost" to a special internet
+address which always references the local host. This can be used with
+.B ipcaddress
+to reference processes running on the same host, without having to know
+the actual name of the local host.
+.LP
+.B ipcaddresses
+returns the
+.IR ndx -th
+internet address for the specified
+.IR host ,
+if the host has more than one internet address defined (this is typical
+of hosts that have multiple network connections for redundancy). An
+.I ndx
+equal to zero is equivalent to calling
+.BR ipcaddress .
+If no
+.IR ndx -th
+address is available, the function returns zero as if the host was not
+recognized.
+.LP
+.B ipclocal
+returns true if the specified internet
+.I address
+references the local host, and false otherwise.
+.I address
+can be
+any of the actual internet addresses of the local host or it can be the
+special internet address corresponding to the hostname "localhost"
+which by convention references the local host. All will return true.
+This can be used to optimize interprocess communication, for example by using
+UNIX domain sockets, named pipes, or shared memory rather than internet
+domain sockets.
+.LP
+.B ipchost
+returns the name of the local host as determined by the
+.BR gethostname (2)
+system call. The name is returned in the character array
+.IR name .
+.B ipchost
+returns the address of
+.IR name .
+.LP
+.BR ipcready ,
+.BR ipctimed ,
+and
+.B ipcpoll
+offer an alternative to forking off a child process to handle each
+connection.  Each functions examines a list of sockets and checks to
+see if any of the specified sockets have data available to be read.
+In order for these functions to examine a socket, that socket must be
+.IR registered .
+The functions
+.BR ipcserver ,
+.BR ipcaccept ,
+.BR ipcclient ,
+.BR ipcpeer ,
+and
+.B ipcpair
+automatically register the sockets that they return as function values.
+.B ipcready
+returns a socket number that has a pending request; either a connection
+request (if the socket was one returned by
+.BR ipcserver ,
+in which case the calling program should do an
+.B ipcaccept
+on that socket),
+or a receive request (if the socket was one returned by
+.BR ipcaccept ,
+in which case the calling program should do an
+.B ipcrecv
+of some flavor on that socket).
+This permits the application to multiplex socket requests in a
+single process. As
+.B ipcready
+is called successive times, it will return a different pending socket
+each time, until all pending sockets have been reported, at which point
+it will begin reporting from the beginning again. This is whether or
+not the prior reported socket was actually serviced.  If an error is
+detected, a negative number (not necessarily a -1) is returned.
+.B ipcready
+blocks waiting for a ready socket.
+.B ipctimed
+waits for
+.I seconds
+seconds for a ready socket, then returns with a negative number
+and errno set to ETIMEDOUT if none are available.
+.B ipcpoll
+is equivalent to calling
+.BR ipctimed(0) ,
+returning immediately with a negative number if no sockets are pending.
+All three functions can be interrupted by 4.3BSD signals; if interrupted
+they return a negative number and errno is set to EINTR.
+.LP
+.B ipcregister
+registers a socket so that it will be examined by
+.B ipcready
+and its kin.
+.B ipcunregister
+unregisters a socket. It does not hurt to register a socket that is
+already registered, nor to unregister a socket that is not registered.
+.B ipcderegister
+unregisters all registered sockets.
+.LP
+.B ipcthisend
+returns the internet address and port number for the local end of the
+specified socket, providing the socket is bound. This is useful if the
+port number was assigned by the operating system rather than by the
+caller (this is done if zero is used as a port number when creating a
+new socket).
+.B ipcthatend
+performs the same function for the remote end of the specified socket,
+providing the socket is connected.
+.LP
+.B ipcnonblocking
+configures a socket so that an operation on that socket that would
+block instead returns an error with errno set to EWOULDBLOCK.
+.B ipcblocking
+reverses this effect. All sockets newly created by
+.B ipcserver
+and its kin are by default blocking.
+.LP
+.B ipcdebug
+.B (ipcnodebug)
+turns on (off) debugging on the socket
+.IR sock .
+The default is off.
+.LP
+.B ipclinger
+.B (ipcnolinger)
+causes an
+.B ipcclose
+to block (not block) until
+.LP
+.B ipcoptions
+returns in an integer vector current values for socket options that can be
+manipulated by functions documented here.
+.I sock
+is a socket,
+.I vector
+is a pointer to an integer vector, and
+.I vsize
+is the size of the vector in bytes (for example, from using the
+.B sizeof
+operator). Upon return,
+.I vsize
+contains the size in bytes of the data placed in the vector.
+Special values for flag fields are
+.I 0
+means the feature is not enabled,
+.I -1
+means the status of the feature could not be obtained (e.g. the
+.BR getsockopt (2)
+system call failed), and
+.I -2
+means the feature is not available on this platform. Below are
+the values placed in
+.IR vector .
+.TP
+.I vector[0]
+Maximum TCP segment size in bytes.
+.TP
+.I vector[1]
+Send buffer size in bytes.
+.TP
+.I vector[2]
+Receive buffer size in bytes.
+.TP
+.I vector[3]
+Value of the debug flag.
+.TP
+.I vector[4]
+Value of the keepalive flag.
+.TP
+.I vector[5]
+Value of the linger flag.
+.TP
+.I vector[6]
+Value of the nodelay flag.
+.TP
+.I vector[7]
+Value of the RFC1323 flag.
+.TP
+.I vector[8]
+Value of the window shift flag.
+.TP
+.I vector[9]
+Send window shift number.
+.TP
+.I vector[10]
+Receive window shift number.
+.LP
+.B ipcpair
+creates a pair of connected sockets, which can be used by parent and
+child processes to communicate. One socket is returned as the function
+value and the other is placed in the value/result parameter
+.IR sockp .
+The socket that is returned as the function value is registered
+while the socket returned in the variable is not. Thus
+a parent may create several socket pairs with corresponding children,
+give each child an unregistered socket, and multiplex the registered
+sockets in order to communicate with them.
+.LP
+.B ipcformat
+returns in
+.I buffer
+a formatted string containing
+.I addr
+and
+.I port
+in canonical form ("dot notation") suitable for printing.
+The address of
+.I buffer
+is returned.
+.LP
+.B ipcdaemon
+turns the calling process into a daemon. Care in the use of this
+function is advised, particularly during the debugging phase. The
+process calling
+.B ipcdaemon
+is divorced from its parent process; all open file descriptors and
+sockets are closed; standard input, output, and error are reassigned
+to oblivion; the controlling terminal is detached; the process is
+disassociated from its process group; and finally all job control
+signals are ignored. Any errors along the way are ignored, and zero
+is always returned. Note that these actions are NOT appropriate for
+a process running under inetd(8); inetd is the preferred method of
+implementing daemon-style servers under 4.3BSD.
+.LP
+.BR locserver ,
+.BR locclient ,
+and
+.B locaccept
+are latecomers to the IPC package. They are identical in function to
+their IPC cousins, but instead of using the internet domain, they
+create UNIX domain sockets using a
+.I path
+name in the file system namespace in order to rendezvous.
+Once a local socket is created, the usual
+.B ipcsend
+and
+.B ipcrecv
+family of routines can be used to transmit and receive data.
+.B ipcready
+may be used as usual to detect a connection request.
+.SH BUGS
+The structures used by
+.B ipcready
+et. al. to select pending sockets are static. There is no way to separate
+the multiplexing of several collections of sockets in a single process.
+.LP
+.B ipcready
+and its kin use a round-robin approach as to selecting the next ready
+socket to be reported.  This prevents starvation, but it means that (for
+example) a connection request must wait to be serviced until all pending
+receive requests are serviced.
+.LP
+While this manual page is not exactly rife with examples, several
+sample programs using these functions are provided with the package.
+.LP
+It would be interesting, and probably useful, to develop a daemon that
+would allow the 4.3BSD IPC facilities to be integrated with the
+System V message queue IPC facility, since many modern UNIX derivatives
+offer both mechanisms. All receives would be from message queues, while
+sends whould be either to message queues on the local host, or to the
+daemon on a remote host, which would act as a surrogate sender. A
+method of uniquely identifying message queues in a distributed environment
+would be useful.
+.SH ERRORS
+When an error is detected in a UNIX system call, the errno set by
+the system is returned. Otherwise, the following error numbers are returned.
+.TP 20
+.SM EINVAL
+An invalid argument was passed to the function (most likely a NULL
+where an address was required).
+.TP
+.SM ETIMEDOUT
+The specified timeout interval elapsed.
+.TP
+.SM ERANGE
+A value was returned from a system call that was not an error,
+but was unexpected, e.g. in
+.B mtimed
+the select system call returns correctly, but the returned file descriptor
+list does not indicate one of the registered sockets.
+.SH FILES
+libipc.a
+.SH "SEE ALSO"
+.BR messages (3l),
+.BR parcel (3l),
+.BR tcp (4-UNICOS)
+.LP
+Sechrest, Stuart,
+\fIAn Introductory 4.3BSD Interprocess Communications Tutorial\fR,
+\fB4.3BSD Unix Programmer's Manual Supplementary Documents 1\fR,
+April 1986
+.LP
+Leffler, Samual J., et al.,
+\fIAn Advanced 4.3BSD Interprocess Communications Tutorial\fR,
+\fB4.3BSD Unix Programmer's Manual Supplementary Documents 1\fR,
+April 1986
+.LP
+Jacobson, V., et al.,
+\fITCP Extensions for High Performance\fR
+RFC1323,
+May 1992
+.LP
+Irwin, B.,
+\fITCP_WINSHIFT on UNICOS\fR,
+NCAR/SCD,
+July 1995
+.SH VERSION
+@(#)ipc.3l	4.7 95/08/06 jsloan@ncar.ucar.edu
+.SH AUTHOR
+John Sloan, NCAR/SCD, P.O. Box 3000, Boulder CO 80307

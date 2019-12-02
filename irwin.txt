@@ -1,0 +1,382 @@
+@(#)irwin.txt	1.2 95/08/02 irwin@ncar.ucar.edu
+
+
+From irwin@niwot.scd.ucar.EDU Wed Jul 26 11:53:31 1995
+Subject: TCP_WINSHIFT on UNICOS
+
+The following information is Craig Ruff's and my understanding of how
+the TCP_WINSHIFT option functions on UNICOS.
+
+The main problem that TCP_WINSHIFT is attempting to solve is the 16-bit
+limit the basic TCP protocol places on its window sizes.  Without some
+sort of enhancement, TCP can not support data communications with
+delay-bandwidth products greater than 65,535 bytes, because the TCP
+header provides only a 16-bit field for the window size.
+
+The CRI TCP_WINSHIFT set-socket-option is the user-interface for what
+appears to be a partial implementation of RFC 1323.
+
+Essentially, with correct participation by two nodes implementing RFC1323,
+the window size is shifted TCP_WINSHIFT number of bits to the RIGHT before
+the window size value is inserted in the TCP header.  The receiving
+side then shifts the received value TCP_WINSHIFT bits to the LEFT to
+reconstruct the window size being communicated by the sender.  The effect
+of all of this shifting is to multply and divide the window size by
+2**TCP_WINSHIFT prior to and after transmission respectively
+
+The SO_SNDBUF and SO_RCVBUF set-socket-options are used to set the
+the high water mark (maximum size) of a TCP session's Send Window and
+Receive Window.  In CRI's implementation, it is up to the user to pick
+an intelligent value of TCP_WINSHIFT based upon the values of
+SO_SNDBUF and SO_RCVBUF selected by the user.  Since bits are shifted off
+to the right, window size resolution is lost, and of course if the 
+TCP_WINSHIFT value is too great for given SO_SNDBUF and SO_RCVBUF values,
+it's possible to produce a zero-sized window.  Therefore, the user
+should be careful to select optimal TCP_WINSHIFT values for given
+SO_SNDBUF and SO_RCVBUF values.  Even the selection of SO_SNDBUF and SO_RCVBUF
+values are important to avoid unnecessary loss of resolution.
+
+Essentially, optimal SO_SNDBUF and SO_RCVBUF values should have their
+rightmost TCP_WINSHIFT number of bits set to zero, and the smallest
+value of TCP-WINSHIFT should be used that accomodates the size of
+the SO_SNDBUF and SO_RCVBUF values.
+
+One way to do this calculation is to divide the desired maximum window
+size by 65535 (0xFFFF), and then round the result up to the nearest
+power of two greater than the result.  Now redivide the original maximum
+window size by the obtained power of two.  Take the result of this divide
+and it round it up by the obtained power of two.
+
+For a desired 10,000,000 byte window, (2**8) * 39168 (0x9900) yields 
+10,027,008 byte buffer.  So TCP_WINSHIFT would be 8 and SO_SNDBUF and SO_RCVBUF would be 10,027,008.
+
+In CRI's implementation it is important to note that TCP_WINSHIFT in no 
+way affects the high water mark values set by SO_SNDBUF and SO_RCVBUF;
+shifting occurs only as a way to transmit larger values than can be
+sent in a 16-bit field.
+
+It is also important to note that the value set by "netvar -S" silently
+limits the maximum value of SO_SNDBUF and SO_RCVBUF, so one would
+have to execute "netvar -S 10,027,008" prior to testing a 10,027,008 buffer.
+
+It may also be necessary to execute "netvar -b" to set the maximum
+number of mbufs available to a process' socket sessions.  The value
+is currently set to zero, which may mean there is no limit, but this
+is currently unknown and is being investigated.
+
+It's important to note that setting TCP_WINSHIFT must be done before
+invlking accept() and connect().
+
+The simplest thing to do is to set TCP_WINSHIFT to the same value on both 
+the listening process and the connecting process; likewise with
+SO_SNDBUF and SO_RCVBUF.  In fact, since most links are symmetric in
+bandwidth-delay product, this is the right thing to do.
+
+However, for purposes of documenation I'll describe the UNICOS 
+behavior regarding TCP_WINSHIFT in greater detail.
+
+In actuallity, four window shift values are maintained for a given TCP
+connection: two values on the connecting node and two values on the
+listening node.  On each node these values consist of a receive window shift
+value and a transmit wondor shift value.  The listener's values are designated
+LST_RCV_SHFT and LST_SND_SHFT.  The connector's values are designated
+CNT_RCV_SHFT and CNT_SND_SHFT. 
+
+Setting TCP_WINSHIFT on the listener or connector results in
+LST_RCV_SHFT or CNT_RCV_SHFT being respectively set locally.  Subsequently,
+if the opposite side agrees to participate, it will set its own
+LST_SND_SHFT or CNT_SND_SHFT value to the value of its counterpart's
+LST_RCV_SHFT or CNT_RCV_SHFT respectively.  In other words, the size
+of the local receive shift value governs what the remote send shift value
+will be, when both sides set TCP_WINSHIFT. It is possible (and in some
+cases makes sense) for the listener and connector to set TCP_WINSHIFT
+to different values.
+
+If only one side sets TCP_WINSHIFT, then on UNICOS, different results
+are obtained depending on whether it's the listener or the connector
+that does the setting.  If only the connector sets TCP_WINSHIFT, then
+on UNICOS, all four values will be the value set by TCP_WINSHIFT on
+the connector.  If only the listener sets TCP_WINSHIFT, then no shift
+values are turned on.
+
+Supposedly setting TCP_WINSHIFT on UNICOS disables window shifting,
+however, this only works on the connector side.  Setting TCP_WINSHIFT
+to -1 on the listener side has no effect.
+
+Finally, as a caveat, packet losses on large bandwidth-delay product
+networks can have catastrophic effect on throughput.  A time-out
+typically results in the "pipeline being drained", and loss of a single
+packet can result in wholesale retransmission of packets already
+successfully received.  The Jacobson Fast Restransmit/Fast Recovery
+algorithm deals with the first problem, while various selective
+acknowledgement strategies can handle the latter problem. Whether
+any of these have been implemented in UNICOS is unknown to me.  However,
+it will be important to monitor TCP behavior by utilizing "netstat -s"
+prior to and subsequent to each load test to determine if any packet
+losses are occuring on the satellite link.
+
+
+From irwin@niwot.scd.ucar.EDU Tue Aug  1 12:32:05 1995
+Subject: ACTS emulation performance testing
+
+This document is a report on performance testing between the HiPPI
+interfaces of echo (echo-h) and aztec (aztec2-h), which are connected
+together through the LANL HiPPI/SONET converter which has its SONET
+connection looped through the BBN Long Link Emulator.
+
+The data path is:
+
+	 echo-h - HiPPI_Switch - HiPPI/SONET Cnvtr
+
+			    - LLE -
+
+	    HiPPI/SONET_Cnvtr HiPPI_Switch - aztec2-h
+
+The LLE actually has two of its SONET ports daisy chained since one
+port doesn't give enough of a delay.  The sum of the two LLE delays is
+273 milliseconds, which yields a result of a 550 millisecond Round Trip
+Time (RTT) by ping between echo-h and aztec2-h.
+
+The optimum TCP window size for a delay-bandwidth product of 550 milliseconds
+time and a link of 135 megabits per second is 9281024 bytes.  A TCP_WINSHIFT
+shift factor of  8 (2**8) is required to handle a buffer of 9281024 bytes.
+
+(Note that OC-3 in our configuration will yield user bandwidth of "only"
+135 mb/sec according to Wally St. John of LANL.)
+
+A ttcp-like performance test tool is provided in UNICOS that consists
+of two programs: nettest and nettestd.  Nettest initiates data transfer
+to/from nettestd, while nettestd waits passively for communications
+to be initiated.
+
+However, a serious flaw exists
+in nettestd.  Unlike nettest, nettestd does not allow the user to
+set the maximum TCP window sizes; nettestd merely uses the default maximum
+window sizes as set by "netvar" (and which values display as the first
+two lines of the netvar command display.)
+
+Interestingly enough, it appears that from reading the UNICOS kernel code,
+the data receivers lie about the size of their receive window when
+sending this information to the sender, tricking the sender into
+sending data faster than convention would ordinarily dictate.
+
+When combined with nettestd's inability to obtain large receive and send
+TCP windows, an interesting anomaly results.  Namely, when using large
+TCP windows with nettest, data sent to nettestd is transferred quite fast.
+However, when nettest reads data from nettestd, the results can be
+an order of magnitude slower.  Even though nettestd's receive TCP window
+is small, it lies about it's size, so nettest's big send window can
+operate relatively efficiently.  However, nettestd is limited by its
+small send TCP window size when it writes to nettest, so we see grossly
+asymmetric behavior between data sent to and from nettestd.
+
+The fix is to modify nettestd so it accepts the "-b size" parameter and
+uses it like nettest does.  (I also getsockopt for SO_SNDBUF, SO_RCVBUF,
+and TCP_WINSHIFT and print out all values after they have been set.)
+
+It should be noted that it is sufficient to set -s only from nettest, as
+UNICOS will perpetuate that value on both the connector (nettest) and
+listener (nettestd) processes.
+
+
+The following show net configuration variables on aztec and echo at the
+time of the tests:
+
+aztec.73: netvar
+Network configuration variables
+	tcp send space is 32768
+	tcp recv space is 32768
+	tcp time to live is 60
+	tcp keepalive delay is 14400
+	udp send space is 65536
+	udp recv space is 68096
+	udp time to live is 60
+	ipforwarding is on
+	ipsendredirects is on
+	subnetsarelocal is on
+	dynamic MTU discovery is on
+	adminstrator mtu override is on
+	maximum number of allocated sockets is 450
+	maximum socket buffer space is 18874368
+	operator message delay interval is 5
+	per-session sockbuf space limit is 0
+
+
+echo.1: netvar
+Network configuration variables
+        tcp send space is 65536
+        tcp recv space is 65536
+        tcp time to live is 60
+        tcp keepalive delay is 14400
+        udp send space is 65536
+        udp recv space is 68096
+        udp time to live is 60
+        ipforwarding is on
+        ipsendredirects is on
+        subnetsarelocal is on
+        dynamic MTU discovery is off
+        adminstrator mtu override is on
+        maximum number of allocated sockets is 850
+        maximum socket buffer space is 18874368
+        operator message delay interval is 5
+        per-session sockbuf space limit is 0
+
+
+
+The following two tests are intended to show whether any other asymmetry
+exits between aztec (a J9) and echo (an EL-92) after fixing nettestd.
+
+In the first test, nettest is run on aztec and in the second test
+nettest is run on echo.  In both cases, data going from aztec to echo
+is faster than data going from echo to aztec, regardless on which machine
+nettest is run.  This asymmetry is consistent in direction, and would
+indicate that the underlying hardware and software is different enough
+between the J9 and EL-92 to produce the slight asymmetry.
+
+A record size of 1000000 byes was chosen since previous tests had shown
+this to be about an optimum-sized record.
+
+
+Test 1:
+
+aztec.76: nettest -s 8 -b 9281024 echo-h 1000 1000000 
+
+Final SO_SNDBUF=00000000008d9e00
+Final SO_RCVBUF=00000000008d9e00
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*1000000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 72.3546 16.9499 (23.4%)  0.0097 ( 0.0%) 13496.89 105.444   110.567
+   read 75.3707 10.4954 (13.9%)  0.1645 ( 0.2%) 12956.79 101.225   106.142
+    r/w 147.7253 27.4454 (18.6%)  0.1741 ( 0.1%) 13221.33 103.292   108.309
+
+
+
+Test 2:
+
+
+echo.243: nettest -s 8 -b 9281024 aztec2-h 1000 1000000
+
+Final SO_SNDBUF=00000000008d9e00
+Final SO_RCVBUF=00000000008d9e00
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*1000000 bytes from      echo to  aztec2-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 76.2860 38.5634 (50.6%)  0.0198 ( 0.0%) 12801.34 100.010   104.869
+   read 71.2913 23.6380 (33.2%)  0.3291 ( 0.5%) 13698.20 107.017   112.216
+    r/w 147.5772 62.2014 (42.1%)  0.3489 ( 0.2%) 13234.59 103.395   108.418
+
+
+
+The next set of tests vary the window size on both nettest and nettestd to
+demonstrate that using a 9281024 byte window size is about optimal.
+The same record size (1000000 bytes) was used as in the previous two
+tests.  However, the window size was varied to be bigger and smaller
+than 9281024.  nettestd's window size was alwasys set to equal nettest's
+window size.
+
+In the following test, the window size was set at .5 the optimal
+size.  The resultant data rate is a little over half the rate for
+the optimal size, which is a very good correlation with the predicted
+results.
+
+
+aztec.90: nettest -s 7 -b 4640512 echo-h 1000 1000000
+
+Final SO_SNDBUF=4640512
+Final SO_RCVBUF=4640512
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 7, recvwindshift= 7.
+Transfer: 1000*1000000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 125.4296 14.6074 (11.6%)  0.0099 ( 0.0%) 7785.74  60.826    63.781
+   read 125.4732 11.1368 ( 8.9%)  0.1693 ( 0.1%) 7783.04  60.805    63.759
+    r/w 250.9028 25.7443 (10.3%)  0.1791 ( 0.1%) 7784.39  60.816    63.770
+
+
+
+In the following test, the window size was set at 1.5 times the optimal
+size.  The resultant data rate is even worse than .5 times the optimal
+size.
+
+
+aztec.95: nettest -s 8 -b 13921536 echo-h 1000 1000000
+
+Final SO_SNDBUF=13921536
+Final SO_RCVBUF=13921536
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*1000000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 134.1695 15.7310 (11.7%)  0.0120 ( 0.0%) 7278.57  56.864    59.626
+   read 146.6956 14.0052 ( 9.5%)  0.2085 ( 0.1%) 6657.07  52.008    54.535
+    r/w 280.8651 29.7363 (10.6%)  0.2206 ( 0.1%) 6953.96  54.328    56.967
+
+
+
+The next set of tests use the optimal window size, but vary the user record
+size to see what effect that has on throughput.  User record sizes were
+varied between 250,000 bytes and 3,000,000 bytes.  None of these user
+record sizes produced results better than the 1,000,000 byte records
+shown at the beginning of this report.
+
+
+
+aztec.99: nettest -s 8 -b 9281024 echo-h 1000 250000
+
+
+Final SO_SNDBUF=9281024
+Final SO_RCVBUF=9281024
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*250000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 26.5292  4.6603 (17.6%)  0.0119 ( 0.0%) 9202.71  71.896    75.389
+   read 28.2364  3.6512 (12.9%)  0.0615 ( 0.2%) 8646.30  67.549    70.830
+    r/w 54.7656  8.3115 (15.2%)  0.0734 ( 0.1%) 8915.83  69.655    73.039
+
+
+
+
+aztec.99: nettest -s 8 -b 9281024 echo-h 1000 500000
+
+Final SO_SNDBUF=9281024
+Final SO_RCVBUF=9281024
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*500000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 41.7429  9.8882 (23.7%)  0.0119 ( 0.0%) 11697.34  91.385    95.825
+   read 52.8885  7.2309 (13.7%)  0.1118 ( 0.2%) 9232.28  72.127    75.631
+    r/w 94.6314 17.1191 (18.1%)  0.1238 ( 0.1%) 10319.64  80.622    84.539
+
+
+
+
+aztec.95: nettest -s 8 -b 9281024 echo-h 1000 2000000
+
+Final SO_SNDBUF=9281024
+Final SO_RCVBUF=9281024
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*2000000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 145.6180 39.7120 (27.3%)  0.0120 ( 0.0%) 13412.66 104.786   109.877
+   read 171.1626 26.8427 (15.7%)  0.3941 ( 0.2%) 11410.93  89.148    93.478
+    r/w 316.7806 66.5547 (21.0%)  0.4061 ( 0.1%) 12331.09  96.337   101.016
+
+
+
+
+aztec.6: nettest -s 8 -b 9281024 echo-h 1000 3000000
+
+Final SO_SNDBUF=9281024
+Final SO_RCVBUF=9281024
+Final TR_SENDWNDSHIFT = 800000000000, sendwinshift = 8, recvwindshift= 8.
+Transfer: 1000*3000000 bytes from     aztec to    echo-h
+           Real  System            User          Kbyte   Mbit(K^2) mbit(1+E6)
+  write 280.8693 54.3887 (19.4%)  0.0120 ( 0.0%) 10430.79  81.491    85.449
+   read 270.4493 41.8980 (15.5%)  0.5933 ( 0.2%) 10832.67  84.630    88.741
+    r/w 551.3186 96.2867 (17.5%)  0.6052 ( 0.1%) 10627.93  83.031    87.064
+
+
+Basil Irwin
+
+8/1/95
+
+

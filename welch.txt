@@ -1,0 +1,267 @@
+@(#)welch.txt	1.1 96/06/19 vwelch@ncsa.uiuc.edu
+
+                        A User's Guide to TCP Windows
+
+               ----------------------------------------------
+             Last Update: Wed Jun 19 10:11:03 1996 by Von Welch
+----------------------------------------------------------------------------
+
+   * What is the TCP Window Thing?
+   * Why have a TCP window?
+   * How do I set the TCP window in my application?
+        o For most OS's
+        o Unicos
+        o AIX
+   * Setting the TCP window size under Unicos
+   * How big do I set the TCP window?
+   * Setting the TCP window size with nettest
+   * More sources of information
+
+----------------------------------------------------------------------------
+
+What is this TCP Window Thing?
+
+A TCP window the amount of outstanding (unacknowledged by the recipient)
+data a sender can send on a particular connection before it gets an
+acknowledgment back from the receiver that it has gotten some of it.
+
+For example if a pair of hosts are talking over a TCP connection that has a
+TCP window size of 64 KB (kilobytes), the sender can only send 64 KB of data
+and then it must stop and wait for an acknowledgment from the receiver that
+some or all of the data has been received. If the receiver acknowledges that
+all the data has been received then the sender is free to send another 64
+KB. If the sender gets back an acknowledgment from the receiver that it
+received the first 32 KB (which could happen if the second 32 KB was still
+in transit or it could happen if the second 32 KB got lost), then the sender
+could only send another 32 KB since it can't have more than 64 KB of
+unacknowledged data outstanding (the second 32 KB of data plus the third).
+
+Why have a TCP window?
+
+The primary reason for the window is congestion control. The whole network
+connection, which consists of the hosts at both ends, the routers in between
+and the actual connections themselves (be they fiber, copper, satellite or
+whatever) will have a bottleneck somewhere that can only handle data so
+fast. Unless the bottleneck is the sending speed of the transmitting host,
+then if the transmitting occurs too fast the bottleneck will be surpassed
+resulting in lost data. The TCP window throttles the transmission speed down
+to a level where congestion and data loss do not occur.
+
+How do I set the TCP window size in my application?
+
+The directions below show how to turn on window scaling on a socket by
+socket basis. For directions on how to set it up as a default for a host and
+a discussion of other factors important to high-speed networking, see
+Jamshid Mahdavi's Enabling High Performance Data Transfers on Hosts
+
+For Most OS's
+
+For most operating systems (known exceptions are listed below) the window
+size is done by setting the socket send and receive buffer sizes.
+
+The only real trick here is that to be sure of the two ends correctly
+negotiating the correct window size you must set the buffer sizes before
+making the connection.
+
+The reason for this is that there are only 16 bits reserved for the window
+size in the TCP header, which only allows for window sizes up to 64
+kilobytes. To work around this limitation a special option, called the TCP
+window scale option, was introduced. This option is negotiated at the
+opening of the connection, so if the a window size of greater than 64 KB is
+to be established it must be done at connection set-up time.
+
+Here is some example code on how this would be done:
+
+                           -----------------------
+
+/* An example of client code that sets the TCP window size */
+
+int window_size = 128 * 1024;   /* 128 kilobytes */
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* These setsockopt()s must happen before the connect() */
+
+setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+         (char *) &window_size, sizeof(window_size));
+
+setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+         (char *) &window_size, sizeof(window_size));
+
+connect(sock, (struct sockaddr *) &address, sizeof(address));
+
+                           -----------------------
+
+/* An example of server code that sets the TCP window size */
+
+int window_size = 128 * 1024;   /* 128 kilobytes */
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* These setsockopt()s must happen before the accept() */
+
+setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+         (char *) &window_size, sizeof(window_size));
+
+setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+         (char *) &window_size, sizeof(window_size));
+
+listen(sock, 5);
+
+accept(sock, NULL, NULL);
+
+                           -----------------------
+
+Again, the order of the setsockopt() calls as compared to the connect() or
+accept() calls is important - the setsockopt() calls must come before the
+connect() or accept() calls.
+
+Unicos
+
+Under Unicos setting the TCP window size is done a little differently.
+Instead of matching the window size to the socket buffer size, Unicos has a
+completely separate socket option for setting the window size.
+
+The option sets the the number of bits the window is shifted left. The
+default window is 64 kilobytes, so the option should be set to the log base
+2 of the desired size divided by 64 kilobytes.
+
+For example the example above under would look like:
+
+                           -----------------------
+
+/* An example of client code that sets the TCP window size under Unicos */
+
+int window_shift = 1;           /* 128 kilobytes */
+        /* 1 = log2( 128 kilobytes / 64 kilobytes) */
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* This setsockopt() must happen before the connect() */
+
+setsockopt(sock, IPPROTO_TCP, TCP_WINSHIFT,
+         (char *) &window_shift, sizeof(window_shift));
+
+connect(sock, (struct sockaddr *) &address, sizeof(address));
+
+                           -----------------------
+
+/* An example of server code that sets the TCP window size under Unicos */
+
+/* I don't believe this is really necessary on the server side under Unicos
+        since I think it will automatically match whatever the client
+        connects with.
+*/
+
+int window_shift = 1;           /* 128 kilobytes */
+        /* 1 = log2( 128 kilobytes / 64 kilobytes) */
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* This setsockopt() must happen before the connect() */
+
+setsockopt(sock, IPPROTO_TCP, TCP_WINSHIFT,
+         (char *) &window_shift, sizeof(window_shift));
+
+listen(sock, 5);
+
+accept(sock, NULL, NULL);
+
+                           -----------------------
+
+AIX
+
+Using TCP window scaling under AIX can be enabled on a socket by socket
+basis using the RFC1323 socket option. Setting this option to one will
+enable windowing scaling.
+
+Socket buffers will need to be increased to effectively use the larger
+window.
+
+For example the example above under would look like:
+
+                           -----------------------
+
+/* An example of client code that sets the TCP window size under AIX */
+
+int one = 1;
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* This setsockopt() must happen before the connect() */
+
+setsockopt(sock, IPPROTO_TCP, TCP_RFC1323,
+         (char *) &one, sizeof(one));
+
+connect(sock, (struct sockaddr *) &address, sizeof(address));
+
+                           -----------------------
+
+/* An example of server code that sets the TCP window size under AIX */
+
+int one = 1;
+
+sock = socket(AF_INET, SOCK_STREAM, 0);
+
+/* This setsockopt() must happen before the connect() */
+
+setsockopt(sock, IPPROTO_TCP, TCP_RFC1323,
+         (char *) &one, sizeof(one));
+
+listen(sock, 5);
+
+accept(sock, NULL, NULL);
+
+                           -----------------------
+
+How big should I set the TCP window size?
+
+In theory the TCP window size should be set to the product of the available
+bandwidth of the network and the round trip time of data going over the
+network. For example if a network had a bandwidth of 100 Mbits/s and the
+round trip time was 5 msec, the TCP window should be 100x10^6 times 5x10^-3
+or 500x10^3 bits (65 kilobytes).
+
+The easiest way to determine the round trip time is to use ping from one
+host to the another and use the response times returned by ping.
+
+Note that many architectures have limits on the size of the socket buffer
+and hence the TCP window size. Typically these are on the order of a
+megabyte.
+
+Setting the TCP window size with nettest
+
+The default nettest provides the -b option on the client side that will set
+the socket buffer sizes. It passes this value to the daemon, which also sets
+it's buffer size, unfortunately it does this after the connection is
+established, which is too late. I have a hacked version of nettestd that
+also supports the -b option. This allows the user to start the nettestd
+daemon so that it will match any window size up to the value specified.
+
+For example:
+
+<server> nettestd -b 64k
+
+<client> nettest -b 64k server
+
+The following above, using the hacked nettest code, starts a daemon on the
+machine called server and a client on the machine called client and caused
+them to open a connection between them with a 64 KB window.
+
+More sources of information
+
+A comprehensive list of directions for enabling TCP window scaling on a
+number of different platforms can be found on Jamshid Mahdavi's page at PSC:
+
+   * Enabling High Performance Data Transfers on Hosts: Notes for Users and
+     System Administrators
+
+For further reading:
+
+   * RFC 1323: TCP Extensions for High Performance
+   * TCP/IP Illustrated, Volume 1 W. Richard Stevens. Sections 20.3, 20.4,
+     and 24.4.
+
+----------------------------------------------------------------------------
+Von Welch
+vwelch@ncsa.uiuc.edu
